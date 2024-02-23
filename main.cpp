@@ -1,11 +1,35 @@
 #include <iostream>
 #include <fstream>
 
-#define k 4
-#define bufferSize 100
+#define k 3
+#define bufferSize 5
+#define smoothing 1.0
+
+std::string processedString = "";
+int hits = 0,misses = 0;
+double prob = 0;
+
+//TODO: criar a hash table e inserir as sequencias la dentro juntamente com a ultima posicao dessa sequencia
+
+char predict(std::string& s) {
+    return 'a';
+}
 
 void processString(const std::string& s) {
+    if(s.length() < k) {
+        return; // pensar no que fazer quando a string é menor que o tamanho da janela
+    }
 
+    std::string window = "";
+    processedString += s.substr(0,s.length() - k);
+    for(int start = 0; start + k < s.length(); start++) {
+        window = s.substr(start,k);
+        char c = predict(window);
+        bool hit = s[start + k] == c;
+        hits += hit;
+        misses += !hit;
+        prob = (hits + smoothing) / (hits + misses + 2 * smoothing);
+    }
 }
 
 int main(int argc,char* argv[]) {
