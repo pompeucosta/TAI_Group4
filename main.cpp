@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <unordered_map>
 
 #define k 3
 #define bufferSize 5
@@ -10,9 +11,15 @@ int hits = 0,misses = 0;
 double prob = 0;
 
 //TODO: criar a hash table e inserir as sequencias la dentro juntamente com a ultima posicao dessa sequencia
+std::unordered_map<std::string,int> hashTable;
 
 char predict(std::string& s) {
-    return 'a';
+    // if sequence is in hash table, return the next character
+    if(hashTable.find(s) != hashTable.end()) {
+        int pos = hashTable[s];
+        return processedString[pos+1];
+    }
+    return ' ';    
 }
 
 void processString(const std::string& s) {
@@ -26,9 +33,19 @@ void processString(const std::string& s) {
         window = s.substr(start,k);
         char c = predict(window);
         bool hit = s[start + k] == c;
-        hits += hit;
-        misses += !hit;
+
+        if (c != ' ') {
+            hits += hit;
+            misses += !hit;
+        }
+
         prob = (hits + smoothing) / (hits + misses + 2 * smoothing);
+        std::cout << "Sequence: " << window << " Predicted: " << c << " Actual: " << s[start+k] << " Hit: " << hit << " Probability: " << prob << std::endl;
+
+        std::cout << processedString << std::endl;
+        int pos = processedString.length() + start;
+        hashTable[window] = pos;
+        //std::cout << "Sequence: " << window << " Pos: " << pos << std::endl;
     }
 }
 
