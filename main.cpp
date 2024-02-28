@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <optional>
+#include <math.h>
 
 
 #define smoothing 1.0
@@ -11,15 +13,16 @@ int hits = 0,misses = 0;
 int pos = 0;    // valor inicial antes de ser conhecido o k
 double prob = 0;
 
-std::unordered_map<std::string,int> hashTable;
+std::unordered_map<std::string,int> posOfSequences;
+std::unordered_map<char,double> bitsToEncode;
 
-char predict(std::string& s) {
+std::optional<char> predict(std::string& s) {
     // if sequence is in hash table, return the next character
-    if(hashTable.find(s) != hashTable.end()) {
-        int pos = hashTable[s];
+    if(posOfSequences.find(s) != posOfSequences.end()) {
+        int pos = posOfSequences[s];
         return processedString[pos+1];
     }
-    return ' ';    
+    return {};    
 }
 
 void processString(const std::string& s) {
@@ -31,18 +34,19 @@ void processString(const std::string& s) {
     processedString += s.substr(0,s.length() - k);
     for(int start = 0; start + k < s.length(); start++) {
         window = s.substr(start,k);
-        char c = predict(window);
-        bool hit = s[start + k] == c;
+        std::optional<char> c = predict(window);
 
-        if (c != ' ') {
+        if (c.has_value()) {
+            bool hit = s[start + k] == c.value();
             hits += hit;
             misses += !hit;
+            prob = (hits + smoothing) / (hits + misses + 2 * smoothing);
+            bitsToEncode[c.value()] = -log2(prob);
+            std::cout << "Sequence: " << window << " Predicted: " << c.value_or("(no value)") << " Actual: " << s[start+k] << " Probability: " << prob << std::endl;
         }
 
-        prob = (hits + smoothing) / (hits + misses + 2 * smoothing);
-        std::cout << "Sequence: " << window << " Predicted: " << c << " Actual: " << s[start+k] << " Hit: " << hit << " Probability: " << prob << std::endl;
 
-        hashTable[window] = pos++;
+        posOfSequences[window] = pos++;
         //std::cout << "Sequence: " << window << " Pos: " << pos-1 << std::endl;
     }
 }
@@ -52,7 +56,7 @@ int main(int argc,char* argv[]) {
     // ./... textFIle k bufferSize
 
     if (argc != 4) {
-        std::cerr << "Uso: " << argv[0] << " <filename> <k> <bufferSize>" << std::endl;
+        std::cerr << "Uso: " << argv[0] << " <filename> <window size> <bufferSize>" << std::endl;
         return 1;
     }
 
