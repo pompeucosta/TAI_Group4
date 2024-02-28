@@ -2,13 +2,13 @@
 #include <fstream>
 #include <unordered_map>
 
-#define k 3
-#define bufferSize 5
-#define smoothing 1.0
 
+#define smoothing 1.0
+int k;
+int bufferSize;
 std::string processedString = "";
 int hits = 0,misses = 0;
-int pos = k - 1;
+int pos = 0;    // valor inicial antes de ser conhecido o k
 double prob = 0;
 
 std::unordered_map<std::string,int> hashTable;
@@ -48,8 +48,21 @@ void processString(const std::string& s) {
 }
 
 int main(int argc,char* argv[]) {
-    std::ifstream inputFile("teste.txt");
 
+    // ./... textFIle k bufferSize
+
+    if (argc != 4) {
+        std::cerr << "Uso: " << argv[0] << " <filename> <k> <bufferSize>" << std::endl;
+        return 1;
+    }
+
+    std::string filename = argv[1];
+    k = std::stoi(argv[2]);
+    bufferSize = std::stoi(argv[3]);
+    pos = k - 1;    // atualizacao do pos
+
+    std::ifstream inputFile(filename);
+    
     if(!inputFile.is_open()) {
         std::cout << "Cannot open file!" << std::endl;
         return -1;
