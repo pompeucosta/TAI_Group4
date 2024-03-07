@@ -1,69 +1,90 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
-#include <optional>
 #include <math.h>
+#include <set>
+#include <algorithm>
 
+typedef struct {
+    char symbol;
+    double probability;
+    double comp_prob;
+} SymbolProb;
 
-#define smoothing 1.0
-int k;
-int bufferSize;
-std::string processedString = "";
-int hits = 0,misses = 0;
-int pos = 0;    // valor inicial antes de ser conhecido o k
-double prob = 0;
-
+SymbolProb sProb;
+int hits = 0,misses = 0,alphabetSize = 0,k = 0,bufferSize = 5;
+double totalBits = 0,threshold = 0,smoothing = 0;
 std::unordered_map<std::string,int> posOfSequences;
-std::unordered_map<char,double> bitsToEncode;
 
-std::optional<char> predict(std::string& s) {
-    // if sequence is in hash table, return the next character
-    if(posOfSequences.find(s) != posOfSequences.end()) {
-        int pos = posOfSequences[s];
-        return processedString[pos+1];
-    }
-    return {};    
+void predict(char symbol) {
+    sProb.probability = (hits + smoothing) / (hits+ misses + 2 * smoothing);
+    sProb.comp_prob = (1 - sProb.probability) / (alphabetSize - 1);
+    totalBits += -log2(sProb.probability);  
 }
 
-void processString(const std::string& s) {
-    if(s.length() < k) {
-        return; // pensar no que fazer quando a string é menor que o tamanho da janela
+int getSizeOfAlphabet(std::ifstream& stream) {
+    std::set<char> alphabet; 
+    char buffer[bufferSize + 1];
+    stream.read(buffer,bufferSize);
+    int bufferLen = 0;
+    while((bufferLen = stream.gcount())) {
+        for(int i = 0; i < bufferLen; i++)
+            alphabet.insert(buffer[i]);
+
+        stream.read(buffer,bufferSize);
     }
 
-    std::string window = "";
-    processedString += s.substr(0,s.length() - k);
-    for(int start = 0; start + k < s.length(); start++) {
-        window = s.substr(start,k);
-        std::optional<char> c = predict(window);
+    return alphabet.size();
+}
 
-        if (c.has_value()) {
-            bool hit = s[start + k] == c.value();
-            hits += hit;
-            misses += !hit;
-            prob = (hits + smoothing) / (hits + misses + 2 * smoothing);
-            bitsToEncode[c.value()] = -log2(prob);
-            std::cout << "Sequence: " << window << " Predicted: " << c.value_or("(no value)") << " Actual: " << s[start+k] << " Probability: " << prob << std::endl;
+bool shouldStopRepeatModel() {
+    return (hits + threshold) < (hits + misses);
+}
+
+void updatePointerPosition(std::string& kmer,int& pointer) {
+    if(posOfSequences.find(kmer) != posOfSequences.end()) {
+        pointer = posOfSequences[kmer];
+    }
+    else {
+        pointer--;
+    }
+
+    hits = 0;
+    misses = 0;
+}
+
+void processString(const std::string& s,int startPos) {
+    if(s.length() < k) {
+        return;
+    }
+
+    std::string kmer = "";
+    for(int windowPointer = startPos,modelPointer = startPos - 1; windowPointer < s.length(); windowPointer++, modelPointer++) {
+        kmer = s.substr(windowPointer - k + 1,k);
+        posOfSequences[kmer] = windowPointer;
+        predict(s.at(modelPointer));
+        if(shouldStopRepeatModel()) {
+            updatePointerPosition(kmer,modelPointer);
         }
-
-
-        posOfSequences[window] = pos++;
-        //std::cout << "Sequence: " << window << " Pos: " << pos-1 << std::endl;
     }
 }
 
 int main(int argc,char* argv[]) {
 
-    // ./... textFIle k bufferSize
-
-    if (argc != 4) {
-        std::cerr << "Uso: " << argv[0] << " <filename> <window size> <bufferSize>" << std::endl;
+    if (argc != 5) {
+        std::cerr << "Uso: " << argv[0] << " <filename> <window size> <threshold> <alpha>" << std::endl;
         return 1;
     }
 
     std::string filename = argv[1];
     k = std::stoi(argv[2]);
-    bufferSize = std::stoi(argv[3]);
-    pos = k - 1;    // atualizacao do pos
+    threshold = std::stod(argv[3]);
+    smoothing = std::stod(argv[4]);
+    //DEBUG
+    // std::string filename = "./teste.txt";
+    // k = 3;
+    // threshold = 10;
+    // smoothing = 1;
 
     std::ifstream inputFile(filename);
     
@@ -72,32 +93,37 @@ int main(int argc,char* argv[]) {
         return -1;
     }
 
-    char buffer[bufferSize + 1];
-    inputFile.read(buffer,bufferSize);
-    int bufferLen = 0;
-    while((bufferLen = inputFile.gcount())) {
-        buffer[bufferLen] = '\0';
-        std::string s(buffer);
-        processString(s);
+    alphabetSize = getSizeOfAlphabet(inputFile);
 
-        //mete o ponteiro para tras para garantir que a ultima sequencia é processada
-        //EXEMPLO
-        //ficheiro: exemplomaisexemplo
-        //k: 3
-        //bufferSize: 5
-        //buffer: exemp
-        //primeira sequencia: exe => adivinha m
-        //segunda sequencia: xem => adivinha p
-        //nao faz mais nenhuma sequencia nesse buffer porque chega ao fim do buffer, sequencia seria emp
-        //nesta altura o ponteiro do ficheiro esta no l
-        //metendo para tras k vezes, ou seja, -3
-        //o ponteiro passa a estar no e de emp
-        //logo o buffer fica emplo em vez de lpoma
-        //e assim a sequencia emp é processada em vez de ser descartada
-        inputFile.seekg(-k,inputFile.cur);
-        inputFile.read(buffer,bufferSize);
+    if(alphabetSize == 0) {
+        std::cout << "File is empty!" << std::endl;
+        return 1;
     }
 
+    inputFile.clear();
+    inputFile.seekg(0,std::ios::beg);
+
+    std::string charactersRead = "";
+
+    for(int i = 0; i < k; i++) {
+        charactersRead += 'A';
+    }
+
+    char buffer[bufferSize + 1];
+    inputFile.read(buffer,bufferSize);
+    int bufferLen = inputFile.gcount();
+
+    while ((bufferLen = inputFile.gcount())) {
+        buffer[bufferLen] = '\0';
+        std::string s(buffer);
+        charactersRead += s;        
+
+        processString(charactersRead,charactersRead.size() - s.size());
+        inputFile.read(buffer,bufferSize);
+    } 
+
     inputFile.close();
+
+    //TODO: escrever os bits no ficheiro
     return 0;
 }
