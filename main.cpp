@@ -12,15 +12,12 @@ typedef struct {
 } SymbolProb;
 
 SymbolProb sProb;
-int hits = 0,misses = 0,alphabetSize = 0,k = 0,bufferSize = 5;
+uint32_t modelPointer = 0;
+uint32_t hits = 0,misses = 0,alphabetSize = 0,k = 0,bufferSize = 5;
 double totalBits = 0,threshold = 0,smoothing = 0;
 std::unordered_map<std::string,int> posOfSequences;
-
-void predict(char symbol) {
-    sProb.probability = (hits + smoothing) / (hits+ misses + 2 * smoothing);
-    sProb.comp_prob = (1 - sProb.probability) / (alphabetSize - 1);
-    totalBits += -log2(sProb.probability);  
-}
+std::string charactersRead = "";
+bool repeatModelStopped = false;
 
 int getSizeOfAlphabet(std::ifstream& stream) {
     std::set<char> alphabet; 
@@ -37,54 +34,93 @@ int getSizeOfAlphabet(std::ifstream& stream) {
     return alphabet.size();
 }
 
+void repeatPredict(char symbolAtModelPoint,char symbolToBePredicted) {
+    bool hit = symbolAtModelPoint == symbolToBePredicted;
+    hits += hit;
+    misses += !hit;
+
+    sProb.probability = (hits + smoothing) / (hits + misses + 2 * smoothing);
+    sProb.comp_prob = (1 - sProb.probability) / (alphabetSize - 1);
+    sProb.symbol = symbolToBePredicted;
+    totalBits += -log2(sProb.probability);
+}
+
+void fallbackPredict(char symbol) {
+    const size_t fallbackWindowSize = 200;
+    size_t len = std::min<size_t>(charactersRead.size(),fallbackWindowSize);
+
+    std::unordered_map<char,int> charCount;
+    for(char c : charactersRead.substr(charactersRead.size() - len,len)) {
+        charCount[c]++;
+    }
+
+    double totalBitsForSymbol = 0;
+    double dLen = static_cast<double>(len);
+    for(const auto& pair : charCount) {
+        double division = pair.second / dLen;
+        totalBitsForSymbol += -division * log2(division);
+    }
+
+    sProb.probability = std::pow(2,-totalBitsForSymbol);
+    sProb.comp_prob = (1 - sProb.probability) / (alphabetSize - 1);
+    sProb.symbol = symbol;
+    totalBits += totalBitsForSymbol;
+}
+
 bool shouldStopRepeatModel() {
-    return (hits + threshold) < (hits + misses);
+    if((hits + misses) == 0)
+        return false;
+    
+    double x = (static_cast<double>(hits) / (hits + misses));
+    return !repeatModelStopped && x < threshold;
 }
 
-void updatePointerPosition(std::string& kmer,int& pointer) {
-    if(posOfSequences.find(kmer) != posOfSequences.end()) {
-        pointer = posOfSequences[kmer];
-    }
-    else {
-        pointer--;
-    }
-
-    hits = 0;
-    misses = 0;
-}
-
-void processString(const std::string& s,int startPos) {
-    if(s.length() < k) {
+void processString(int startPos) {
+    if(charactersRead.length() < k) {
         return;
     }
 
     std::string kmer = "";
-    for(int windowPointer = startPos,modelPointer = startPos - 1; windowPointer < s.length(); windowPointer++, modelPointer++) {
-        kmer = s.substr(windowPointer - k + 1,k);
-        posOfSequences[kmer] = windowPointer;
-        predict(s.at(modelPointer));
-        if(shouldStopRepeatModel()) {
-            updatePointerPosition(kmer,modelPointer);
+    for(int windowPointer = startPos; windowPointer < charactersRead.length(); windowPointer++, modelPointer++) {
+        kmer = charactersRead.substr(windowPointer - k + 1,k);
+        if(repeatModelStopped) {
+            auto it = posOfSequences.find(kmer);
+            if(it != posOfSequences.end()) {
+                repeatModelStopped = false;
+                hits = 0;
+                misses = 0;
+                modelPointer = posOfSequences[kmer];
+            }
         }
+        
+        if(repeatModelStopped) {
+            fallbackPredict(charactersRead.at(windowPointer));
+        }
+        else {
+            repeatPredict(charactersRead.at(modelPointer),charactersRead.at(windowPointer));
+            repeatModelStopped = shouldStopRepeatModel();
+        }
+
+        posOfSequences[kmer] = windowPointer;
     }
 }
 
 int main(int argc,char* argv[]) {
 
-    if (argc != 5) {
-        std::cerr << "Uso: " << argv[0] << " <filename> <window size> <threshold> <alpha>" << std::endl;
-        return 1;
-    }
+    // if (argc != 5) {
+    //     std::cerr << "Uso: " << argv[0] << " <filename> <window size> <threshold> <alpha>" << std::endl;
+    //     return 1;
+    // }
 
-    std::string filename = argv[1];
-    k = std::stoi(argv[2]);
-    threshold = std::stod(argv[3]);
-    smoothing = std::stod(argv[4]);
+    // std::string filename = argv[1];
+    // k = std::stoi(argv[2]);
+    // threshold = std::stod(argv[3]);
+    // smoothing = std::stod(argv[4]);
     //DEBUG
-    // std::string filename = "./teste.txt";
-    // k = 3;
-    // threshold = 10;
-    // smoothing = 1;
+    std::string filename = "./teste.txt";
+    k = 3;
+    threshold = 0.3;
+    smoothing = 1;
 
     std::ifstream inputFile(filename);
     
@@ -103,22 +139,20 @@ int main(int argc,char* argv[]) {
     inputFile.clear();
     inputFile.seekg(0,std::ios::beg);
 
-    std::string charactersRead = "";
-
     for(int i = 0; i < k; i++) {
         charactersRead += 'A';
     }
 
     char buffer[bufferSize + 1];
     inputFile.read(buffer,bufferSize);
-    int bufferLen = inputFile.gcount();
+    int bufferLen;
 
     while ((bufferLen = inputFile.gcount())) {
         buffer[bufferLen] = '\0';
         std::string s(buffer);
         charactersRead += s;        
 
-        processString(charactersRead,charactersRead.size() - s.size());
+        processString(charactersRead.size() - s.size());
         inputFile.read(buffer,bufferSize);
     } 
 
