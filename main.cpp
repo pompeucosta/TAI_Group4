@@ -4,6 +4,7 @@
 #include <math.h>
 #include <set>
 #include <algorithm>
+#include <stdint.h>
 
 typedef struct {
     char symbol;
@@ -105,6 +106,21 @@ void processString(int startPos) {
     }
 }
 
+void writeResultsToFile(std::string filename) {
+    std::string outputFilename = filename + "_results.txt";
+
+    std::ofstream outputFile(outputFilename);
+    if (!outputFile.is_open()) {
+        std::cerr << "Cannot create output file " << outputFilename << std::endl;
+        return;
+    }
+
+    outputFile << "Params: " << filename << " alpha: " << smoothing << " window size: " << k << " threshold: " << threshold << std::endl;
+    outputFile << "Estimated total bits: " << totalBits << std::endl;
+    outputFile << "Average number of bits per symbol: " << totalBits / charactersRead.size() << std::endl;
+    outputFile.close();
+}
+
 int main(int argc,char* argv[]) {
 
     // if (argc != 5) {
@@ -117,7 +133,7 @@ int main(int argc,char* argv[]) {
     // threshold = std::stod(argv[3]);
     // smoothing = std::stod(argv[4]);
     //DEBUG
-    std::string filename = "./teste.txt";
+    std::string filename = "./chry.txt";
     k = 3;
     threshold = 0.3;
     smoothing = 1;
@@ -158,6 +174,7 @@ int main(int argc,char* argv[]) {
 
     inputFile.close();
 
-    //TODO: escrever os bits no ficheiro
+    writeResultsToFile(filename);    
+
     return 0;
 }
