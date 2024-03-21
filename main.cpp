@@ -6,15 +6,26 @@
 #include <algorithm>
 #include <stdint.h>
 #include <iomanip>
+#include <unistd.h>
 
-size_t hits = 0,misses = 0,alphabetSize = 0,k = 0,bufferSize = 1024,modelPointer = 0;
-double totalBits = 0,threshold = 0,smoothing = 0;
+size_t hits = 0,misses = 0,alphabetSize = 0,k = 11,bufferSize = 8000,modelPointer = 0;
+double totalBits = 0,threshold = 0.8,smoothing = 1;
 std::unordered_map<std::string,size_t> posOfSequences;
 std::string* charactersRead = new std::string("");
-bool repeatModelStopped = false;
+bool repeatModelStopped = false,statistics = false;
 
 double fallbackBits = 0,repeatBits = 0;
 size_t fallbackCalls = 0,repeatCalls = 0;
+
+void printHelp(const char* programName) {
+    std::cout << "Usage: " << programName << " <input file> [-s] [-h] [-k <kmer size>] [-t <threshold>] [-a <alpha>]" << std::endl;
+    std::cout << "Options:" << std::endl;
+    std::cout << "  -s               Enable statistics (Default: false)" << std::endl;
+    std::cout << "  -k <value>       Set the size of the kmer (Default: 11)" << std::endl;
+    std::cout << "  -t <value>       Set the threshold [0-1] (Default: 0.8)" << std::endl;
+    std::cout << "  -a <value>       Set the value of alpha or smoothing (Default: 1)" << std::endl;
+    std::cout << "  -h               Display this help message" << std::endl;
+}
 
 int getSizeOfAlphabet(std::ifstream& stream) {
     std::set<char> alphabet; 
@@ -46,7 +57,7 @@ void repeatPredict(char symbolAtModelPoint,char symbolToBePredicted) {
     else {
         bits = -log2((1 - probability) / (alphabetSize - 1));
     }
-    
+
     repeatBits += bits;
     totalBits += bits;
 }
@@ -131,24 +142,90 @@ void writeResultsToFile(std::string filename) {
 }
 
 int main(int argc,char* argv[]) {
+    bool fileFlag = false;
+    int option;
 
-    // if (argc != 5) {
-    //     std::cerr << "Uso: " << argv[0] << " <filename> <window size> <threshold> <alpha>" << std::endl;
-    //     return 1;
-    // }
+    while((option = getopt(argc,argv,"k:t:a:sh")) != -1) {
+        switch (option)
+        {
+            case 'k':
+                try {
+                    long x = std::stol(optarg);
+                    if(x <= 0) {
+                        std::cerr << "Error: Invalid value for -k option. Must be a positive integer" << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
+                    k = x;
+                } catch (const std::invalid_argument& e) {
+                    std::cerr << "Error: Invalid value for -k option. Must be an integer." << std::endl;
+                    exit(EXIT_FAILURE);
+                } catch (const std::out_of_range& e) {
+                    std::cerr << "Error: Value for -k option out of range." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 't':
+                try {
+                    threshold = std::stod(optarg);
+                    if(threshold < 0) {
+                        std::cerr << "Error: Invalid value for -t option. Must be positive" << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
 
-    // std::string filename = argv[1];
-    // k = std::stoi(argv[2]);
-    // threshold = std::stod(argv[3]);
-    // smoothing = std::stod(argv[4]);
-    //DEBUG
-    std::string filename = "./chry.txt";
-    k = 11;
-    threshold = 0.8;
-    smoothing = 1;
+                    if(threshold > 1) {
+                        std::cerr << "Error: Invalid value for -t option. Must be between 0 and 1" << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::invalid_argument& e) {
+                    std::cerr << "Error: Invalid value for -t option. Must be a double." << std::endl;
+                    exit(EXIT_FAILURE);
+                } catch (const std::out_of_range& e) {
+                    std::cerr << "Error: Value for -t option out of range." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 'a':
+                try {
+                    smoothing = std::stod(optarg);
+                    if(smoothing < 0) {
+                        std::cerr << "Error: Invalid value for -a option. Must be greater than 0" << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::invalid_argument& e) {
+                    std::cerr << "Error: Invalid value for -a option. Must be a double." << std::endl;
+                    exit(EXIT_FAILURE);
+                } catch (const std::out_of_range& e) {
+                    std::cerr << "Error: Value for -a option out of range." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case '?':
+            case 'h':
+                printHelp(argv[0]);
+                exit(EXIT_SUCCESS);
+                break;
+            case 's':
+                statistics = true;
+                break;
+            default:
+                printHelp(argv[0]);
+                exit(EXIT_SUCCESS);
+                break;
+        }
+    }
+
+    if(optind >= argc) {
+        std::cerr << "Error: Please provide an input file" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    std::string filename = argv[optind];
+
+    if(k > bufferSize)
+        bufferSize = k;
 
     std::ifstream inputFile(filename);
-    
+
     if(!inputFile.is_open()) {
         std::cerr << "Cannot open file!" << std::endl;
         return -1;
