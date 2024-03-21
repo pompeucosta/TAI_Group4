@@ -7,13 +7,6 @@
 #include <stdint.h>
 #include <iomanip>
 
-typedef struct {
-    char symbol;
-    double probability;
-    double comp_prob;
-} SymbolProb;
-
-SymbolProb sProb;
 size_t hits = 0,misses = 0,alphabetSize = 0,k = 0,bufferSize = 1024,modelPointer = 0;
 double totalBits = 0,threshold = 0,smoothing = 0;
 std::unordered_map<std::string,size_t> posOfSequences;
@@ -44,10 +37,16 @@ void repeatPredict(char symbolAtModelPoint,char symbolToBePredicted) {
     hits += hit;
     misses += !hit;
 
-    sProb.probability = (hits + smoothing) / (hits + misses + 2 * smoothing);
-    sProb.comp_prob = (1 - sProb.probability) / (alphabetSize - 1);
-    sProb.symbol = symbolToBePredicted;
-    double bits = -log2(sProb.probability);
+    double probability = (hits + smoothing) / (hits + misses + 2 * smoothing);
+    double bits;
+
+    if(hit) {
+        bits = -log2(probability);
+    }
+    else {
+        bits = -log2((1 - probability) / (alphabetSize - 1));
+    }
+    
     repeatBits += bits;
     totalBits += bits;
 }
@@ -69,9 +68,6 @@ void fallbackPredict(char symbol) {
         totalBitsForSymbol += -division * log2(division);
     }
 
-    sProb.probability = std::pow(2,-totalBitsForSymbol);
-    sProb.comp_prob = (1 - sProb.probability) / (alphabetSize - 1);
-    sProb.symbol = symbol;
     fallbackBits += totalBitsForSymbol;
     totalBits += totalBitsForSymbol;
 }
