@@ -68,33 +68,29 @@ std::string mutateFile(const std::string& inputFilename, double mutationProbabil
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-         std::cerr << "Uso: " << argv[0] << " <input_filename> <mutation_probability>" << std::endl;
-        return 1;
+        std::cerr << "Usage: " << argv[0] << " <input_filename> <mutation_probability>" << std::endl;
+        exit(EXIT_FAILURE);
     }
 
     std::string inputFilename = argv[1];
-    double mutationProbability = std::stod(argv[2]);
+    double mutationProbability;
+    try{
+        mutationProbability = std::stod(argv[2]);
+        if(mutationProbability < 0 || mutationProbability > 1) {
+            std::cerr << "Error: Probability must be between 0 and 1 -> [0..1]" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }catch(const std::invalid_argument& e) {
+        std::cerr << "Error: Probability must be a decimal value" << std::endl;
+        exit(EXIT_FAILURE);
+    }
 
     std::string outputFilename = mutateFile(inputFilename, mutationProbability);
 
-    if (!outputFilename.empty()) {
-        std::ifstream outputFile(outputFilename);
-        if (!outputFile.is_open()) {
-            std::cerr << "Erro ao abrir o ficheiro mutado." << std::endl;
-            return 1;
-        }
-
-        // Ler e imprimir o conteúdo do ficheiro mutado
-        std::string line;
-        while (std::getline(outputFile, line)) {
-            std::cout << line << std::endl;
-        }
-        outputFile.close();
-        
-    } else {
-        std::cerr << "Ficheiro mutado não foi criado corretamente!!" << std::endl;
-        return 1;
-    }
+    if (outputFilename.empty()) {
+        std::cerr << "Error: Failed to create file" << std::endl;
+        exit(EXIT_FAILURE);
+    } 
 
     return 0;
 }
