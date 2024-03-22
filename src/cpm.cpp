@@ -7,15 +7,24 @@
 #include <stdint.h>
 #include <iomanip>
 #include <unistd.h>
+#include <vector>
+#include <chrono>
 
-size_t hits = 0,misses = 0,alphabetSize = 0,k = 11,bufferSize = 8000,modelPointer = 0;
+typedef struct {
+    const uint8_t repeatIteration = 1,fallbackIteration = 0;
+    double fallbackBits = 0,repeatBits = 0;
+    size_t fallbackCalls = 0,repeatCalls = 0;
+    uint64_t elapsedTime = 0;
+    std::vector<uint8_t> iterations;
+} Statistics;
+
+size_t hits = 0,misses = 0,alphabetSize = 0,k = 11,modelPointer = 0;
 double totalBits = 0,threshold = 0.8,smoothing = 1;
 std::unordered_map<std::string,size_t> posOfSequences;
 std::string* charactersRead = new std::string("");
-bool repeatModelStopped = false,statistics = false;
+bool repeatModelStopped = false,statisticsEnable = false;
 
-double fallbackBits = 0,repeatBits = 0;
-size_t fallbackCalls = 0,repeatCalls = 0;
+Statistics statistics;
 
 void printHelp(const char* programName) {
     std::cout << "Usage: " << programName << " <input file> [-s] [-h] [-k <kmer size>] [-t <threshold>] [-a <alpha>]" << std::endl;
@@ -27,12 +36,15 @@ void printHelp(const char* programName) {
     std::cout << "  -h               Display this help message" << std::endl;
 }
 
-int getSizeOfAlphabet(std::ifstream& stream) {
+int getSizeOfAlphabet(std::ifstream& stream,size_t& charsRead) {
     std::set<char> alphabet; 
-    char buffer[bufferSize + 1];
+    charsRead = 0;
+    const size_t bufferSize = 8000;
+    char* buffer = new char[bufferSize + 1];
     stream.read(buffer,bufferSize);
     size_t bufferLen = 0;
     while((bufferLen = stream.gcount())) {
+        charsRead += bufferLen;
         for(size_t i = 0; i < bufferLen; i++)
             alphabet.insert(buffer[i]);
 
@@ -43,7 +55,6 @@ int getSizeOfAlphabet(std::ifstream& stream) {
 }
 
 void repeatPredict(char symbolAtModelPoint,char symbolToBePredicted) {
-    repeatCalls++;
     bool hit = symbolAtModelPoint == symbolToBePredicted;
     hits += hit;
     misses += !hit;
@@ -58,12 +69,10 @@ void repeatPredict(char symbolAtModelPoint,char symbolToBePredicted) {
         bits = -log2((1 - probability) / (alphabetSize - 1));
     }
 
-    repeatBits += bits;
     totalBits += bits;
 }
 
 void fallbackPredict(char symbol) {
-    fallbackCalls++;
     const size_t fallbackWindowSize = 200;
     size_t len = std::min<size_t>((*charactersRead).size(),fallbackWindowSize);
 
@@ -79,7 +88,6 @@ void fallbackPredict(char symbol) {
         totalBitsForSymbol += -division * log2(division);
     }
 
-    fallbackBits += totalBitsForSymbol;
     totalBits += totalBitsForSymbol;
 }
 
@@ -108,12 +116,29 @@ void processString(int startPos) {
             }
         }
         
+        double bitsBeforePredict = totalBits;
+        uint8_t model;
         if(repeatModelStopped) {
+            model = statistics.fallbackIteration;
             fallbackPredict((*charactersRead).at(windowPointer));
         }
         else {
+            model = statistics.repeatIteration;
             repeatPredict((*charactersRead).at(modelPointer),(*charactersRead).at(windowPointer));
             repeatModelStopped = shouldStopRepeatModel();
+        }
+
+        if(statisticsEnable) {
+            statistics.iterations.push_back(model);
+
+            double b = totalBits - bitsBeforePredict;
+            bool isFallback = model == statistics.fallbackIteration;
+
+            statistics.fallbackBits += b * isFallback;
+            statistics.fallbackCalls += isFallback;
+
+            statistics.repeatBits += b * (!isFallback);
+            statistics.repeatCalls += !isFallback;
         }
 
         posOfSequences[kmer] = windowPointer;
@@ -134,11 +159,25 @@ void writeResultsToFile(std::string filename) {
     outputFile << "Estimated total bytes: " << std::fixed << std::setprecision(2) << totalBits / 8 << "\n";
     outputFile << "Average number of bits per symbol: " << totalBits / (*charactersRead).size() << "\n";
     outputFile.close();
+}
 
-    std::cout << "repeat model bits: " << std::fixed << std::setprecision(2) << repeatBits << "\n";
-    std::cout << "fallback model bits: " << std::fixed << std::setprecision(2) << fallbackBits << "\n";
-    std::cout << "repeat calls: " << repeatCalls << "\n";
-    std::cout << "fallback calls: " << fallbackCalls << "\n";
+void writeStatisticsToFile(std::ofstream& output,const Statistics& statistics) {
+    output << "{\"elapsedTime\": " << statistics.elapsedTime << ",";
+    output << "\"fallbackModelBits\": " << std::fixed << std::setprecision(5) << statistics.fallbackBits << ",";
+    output << "\"fallbackModelCalls\": " << statistics.fallbackCalls << ",";
+    output << "\"repeatModelBits\": " << std::fixed << std::setprecision(5) << statistics.repeatBits << ",";
+    output << "\"repeatModelCalls\": " << statistics.repeatCalls << ",";
+    output << "\"repeatIterationValue\": " << statistics.repeatIteration << ",";
+    output << "\"fallbackIterationValue\": " << statistics.fallbackIteration << ",";
+    output << "\"iterations\": [";
+    for(size_t i = 0; i < statistics.iterations.size(); i++) {
+        output << statistics.iterations[i];
+        if(i != statistics.iterations.size() - 1) {
+            output << ",";
+        }
+    }
+    output << "]";
+    output << "}" << std::endl;
 }
 
 int main(int argc,char* argv[]) {
@@ -205,7 +244,7 @@ int main(int argc,char* argv[]) {
                 exit(EXIT_SUCCESS);
                 break;
             case 's':
-                statistics = true;
+                statisticsEnable = true;
                 break;
             default:
                 printHelp(argv[0]);
@@ -220,6 +259,7 @@ int main(int argc,char* argv[]) {
     }
 
     std::string filename = argv[optind];
+    size_t bufferSize = 8000;
 
     if(k > bufferSize)
         bufferSize = k;
@@ -231,11 +271,16 @@ int main(int argc,char* argv[]) {
         return -1;
     }
 
-    alphabetSize = getSizeOfAlphabet(inputFile);
+    size_t numCharsInFile = 0;
+    alphabetSize = getSizeOfAlphabet(inputFile,numCharsInFile);
 
     if(alphabetSize == 0) {
         std::cerr << "File is empty!" << std::endl;
         return -1;
+    }
+
+    if(statisticsEnable) {
+        statistics.iterations.reserve(numCharsInFile);
     }
 
     inputFile.clear();
@@ -245,10 +290,11 @@ int main(int argc,char* argv[]) {
         (*charactersRead) += 'A';
     }
 
-    char buffer[bufferSize + 1];
+    char* buffer = new char[bufferSize + 1];
     inputFile.read(buffer,bufferSize);
     size_t bufferLen;
 
+    auto start = std::chrono::high_resolution_clock::now();
     while ((bufferLen = inputFile.gcount())) {
         buffer[bufferLen] = '\0';
         std::string s(buffer);
@@ -260,7 +306,23 @@ int main(int argc,char* argv[]) {
 
     inputFile.close();
 
-    writeResultsToFile(filename);    
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    statistics.elapsedTime = duration.count();
+    writeResultsToFile(filename);
+
+    if(statisticsEnable) {
+        std::ofstream output(filename + "_statistics.json"); 
+        if(!output.is_open()) {
+            std::cerr << "Error: Unable to create file " << filename + "_statistics.json" << std::endl;
+        }
+        else {
+            writeStatisticsToFile(output,statistics);
+        }
+        output.close();
+    }
+
+    std::cout << "Finished in " << statistics.elapsedTime << " ms" << std::endl;    
 
     return 0;
 }
