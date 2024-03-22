@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <vector>
 #include <chrono>
+#include <filesystem>
 
 typedef struct {
     const uint8_t repeatIteration = 1,fallbackIteration = 0;
@@ -21,7 +22,7 @@ typedef struct {
 size_t hits = 0,misses = 0,alphabetSize = 0,k = 11,modelPointer = 0;
 double totalBits = 0,threshold = 0.8,smoothing = 1;
 std::unordered_map<std::string,size_t> posOfSequences;
-std::string* charactersRead = new std::string("");
+std::string charactersRead("");
 bool repeatModelStopped = false,statisticsEnable = false;
 
 Statistics statistics;
@@ -74,11 +75,11 @@ void repeatPredict(char symbolAtModelPoint,char symbolToBePredicted) {
 
 void fallbackPredict(char symbol) {
     const size_t fallbackWindowSize = 200;
-    size_t len = std::min<size_t>((*charactersRead).size(),fallbackWindowSize);
+    size_t len = std::min<size_t>(charactersRead.size(),fallbackWindowSize);
 
     std::unordered_map<char,uint16_t> charCount;
-    for(char c : (*charactersRead).substr((*charactersRead).size() - len,len)) {
-        charCount[c]++;
+    for(size_t i = charactersRead.size() - len; i < charactersRead.size(); i++) {
+        charCount[charactersRead[i]]++;
     }
 
     double totalBitsForSymbol = 0;
@@ -99,13 +100,13 @@ bool shouldStopRepeatModel() {
 }
 
 void processString(int startPos) {
-    if((*charactersRead).length() < k) {
+    if(charactersRead.length() < k) {
         return;
     }
 
     std::string kmer = "";
-    for(size_t windowPointer = startPos; windowPointer < (*charactersRead).length(); windowPointer++, modelPointer++) {
-        kmer = (*charactersRead).substr(windowPointer - k + 1,k);
+    for(size_t windowPointer = startPos; windowPointer < charactersRead.length(); windowPointer++, modelPointer++) {
+        kmer = charactersRead.substr(windowPointer - k + 1,k);
         if(repeatModelStopped) {
             auto it = posOfSequences.find(kmer);
             if(it != posOfSequences.end()) {
@@ -120,11 +121,11 @@ void processString(int startPos) {
         uint8_t model;
         if(repeatModelStopped) {
             model = statistics.fallbackIteration;
-            fallbackPredict((*charactersRead).at(windowPointer));
+            fallbackPredict(charactersRead[windowPointer]);
         }
         else {
             model = statistics.repeatIteration;
-            repeatPredict((*charactersRead).at(modelPointer),(*charactersRead).at(windowPointer));
+            repeatPredict(charactersRead[modelPointer],charactersRead[windowPointer]);
             repeatModelStopped = shouldStopRepeatModel();
         }
 
@@ -157,7 +158,7 @@ void writeResultsToFile(std::string filename) {
     outputFile << "Params: " << filename << " alpha: " << smoothing << " window size: " << k << " threshold: " << threshold << "\n";
     outputFile << "Estimated total bits: " << std::fixed << std::setprecision(2) << totalBits << "\n";
     outputFile << "Estimated total bytes: " << std::fixed << std::setprecision(2) << totalBits / 8 << "\n";
-    outputFile << "Average number of bits per symbol: " << totalBits / (*charactersRead).size() << "\n";
+    outputFile << "Average number of bits per symbol: " << totalBits / charactersRead.size() << "\n";
     outputFile.close();
 }
 
@@ -167,11 +168,11 @@ void writeStatisticsToFile(std::ofstream& output,const Statistics& statistics) {
     output << "\"fallbackModelCalls\": " << statistics.fallbackCalls << ",";
     output << "\"repeatModelBits\": " << std::fixed << std::setprecision(5) << statistics.repeatBits << ",";
     output << "\"repeatModelCalls\": " << statistics.repeatCalls << ",";
-    output << "\"repeatIterationValue\": " << statistics.repeatIteration << ",";
-    output << "\"fallbackIterationValue\": " << statistics.fallbackIteration << ",";
+    output << "\"repeatIterationValue\": " << static_cast<unsigned int>(statistics.repeatIteration) << ",";
+    output << "\"fallbackIterationValue\": " << static_cast<unsigned int>(statistics.fallbackIteration) << ",";
     output << "\"iterations\": [";
     for(size_t i = 0; i < statistics.iterations.size(); i++) {
-        output << statistics.iterations[i];
+        output << static_cast<unsigned int>(statistics.iterations[i]);
         if(i != statistics.iterations.size() - 1) {
             output << ",";
         }
@@ -287,21 +288,17 @@ int main(int argc,char* argv[]) {
     inputFile.seekg(0,std::ios::beg);
 
     for(size_t i = 0; i < k; i++) {
-        (*charactersRead) += 'A';
+        charactersRead += 'A';
     }
 
-    char* buffer = new char[bufferSize + 1];
-    inputFile.read(buffer,bufferSize);
+    char* buffer = new char[bufferSize];
     size_t bufferLen;
 
     auto start = std::chrono::high_resolution_clock::now();
-    while ((bufferLen = inputFile.gcount())) {
-        buffer[bufferLen] = '\0';
-        std::string s(buffer);
-        (*charactersRead) += s;        
+    while ((bufferLen = inputFile.readsome(buffer,bufferSize)) > 0) {
+        charactersRead.append(buffer,bufferLen);        
 
-        processString((*charactersRead).size() - s.size());
-        inputFile.read(buffer,bufferSize);
+        processString(charactersRead.size() - bufferLen);
     } 
 
     inputFile.close();
@@ -309,10 +306,14 @@ int main(int argc,char* argv[]) {
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     statistics.elapsedTime = duration.count();
-    writeResultsToFile(filename);
+
+    std::filesystem::path filePath(filename);
+    std::string fileNameWithoutExtension = filePath.stem().string();
+
+    writeResultsToFile(fileNameWithoutExtension);
 
     if(statisticsEnable) {
-        std::ofstream output(filename + "_statistics.json"); 
+        std::ofstream output(fileNameWithoutExtension + "_statistics.json"); 
         if(!output.is_open()) {
             std::cerr << "Error: Unable to create file " << filename + "_statistics.json" << std::endl;
         }
