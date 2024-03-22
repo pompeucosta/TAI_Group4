@@ -16,7 +16,8 @@ typedef struct {
     double fallbackBits = 0,repeatBits = 0;
     size_t fallbackCalls = 0,repeatCalls = 0;
     uint64_t elapsedTime = 0;
-    std::vector<uint8_t> iterations;
+    std::vector<uint8_t> modelUsed;
+    std::vector<double> bits;
 } Statistics;
 
 size_t hits = 0,misses = 0,alphabetSize = 0,k = 11,modelPointer = 0;
@@ -130,9 +131,10 @@ void processString(int startPos) {
         }
 
         if(statisticsEnable) {
-            statistics.iterations.push_back(model);
+            statistics.modelUsed.push_back(model);
 
             double b = totalBits - bitsBeforePredict;
+            statistics.bits.push_back(b);
             bool isFallback = model == statistics.fallbackIteration;
 
             statistics.fallbackBits += b * isFallback;
@@ -170,10 +172,18 @@ void writeStatisticsToFile(std::ofstream& output,const Statistics& statistics) {
     output << "\"repeatModelCalls\": " << statistics.repeatCalls << ",";
     output << "\"repeatIterationValue\": " << static_cast<unsigned int>(statistics.repeatIteration) << ",";
     output << "\"fallbackIterationValue\": " << static_cast<unsigned int>(statistics.fallbackIteration) << ",";
-    output << "\"iterations\": [";
-    for(size_t i = 0; i < statistics.iterations.size(); i++) {
-        output << static_cast<unsigned int>(statistics.iterations[i]);
-        if(i != statistics.iterations.size() - 1) {
+    output << "\"modelsUsed\": [";
+    for(size_t i = 0; i < statistics.modelUsed.size(); i++) {
+        output << static_cast<unsigned int>(statistics.modelUsed[i]);
+        if(i != statistics.modelUsed.size() - 1) {
+            output << ",";
+        }
+    }
+    output << "],";
+    output << "\"bitsCalculated\": [";
+    for(size_t i = 0; i < statistics.bits.size(); i++) {
+        output << std::fixed << std::setprecision(5) << statistics.bits[i];
+        if(i != statistics.bits.size() - 1) {
             output << ",";
         }
     }
@@ -281,7 +291,8 @@ int main(int argc,char* argv[]) {
     }
 
     if(statisticsEnable) {
-        statistics.iterations.reserve(numCharsInFile);
+        statistics.modelUsed.reserve(numCharsInFile);
+        statistics.bits.reserve(numCharsInFile);
     }
 
     inputFile.clear();
