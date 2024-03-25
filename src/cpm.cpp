@@ -20,8 +20,8 @@ typedef struct {
     std::vector<double> bits;
 } Statistics;
 
-size_t hits = 0,misses = 0,alphabetSize = 0,k = 11,modelPointer = 0;
-double totalBits = 0,threshold = 0.8,smoothing = 1;
+size_t hits = 0,misses = 0,alphabetSize = 0,k = 10,modelPointer = 0;
+double totalBits = 0,threshold = 0.9,smoothing = 1;
 std::unordered_map<std::string,size_t> posOfSequences;
 std::string charactersRead("");
 bool repeatModelStopped = false,statisticsEnable = false;
@@ -32,8 +32,8 @@ void printHelp(const char* programName) {
     std::cout << "Usage: " << programName << " <input file> [-s] [-h] [-k <kmer size>] [-t <threshold>] [-a <alpha>]" << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  -s               Enable statistics (Default: false)" << std::endl;
-    std::cout << "  -k <value>       Set the size of the kmer (Default: 11)" << std::endl;
-    std::cout << "  -t <value>       Set the threshold [0-1] (Default: 0.8)" << std::endl;
+    std::cout << "  -k <value>       Set the size of the kmer (Default: 10)" << std::endl;
+    std::cout << "  -t <value>       Set the threshold [0-1] (Default: 0.9)" << std::endl;
     std::cout << "  -a <value>       Set the value of alpha or smoothing (Default: 1)" << std::endl;
     std::cout << "  -h               Display this help message" << std::endl;
 }
