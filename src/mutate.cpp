@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <set>
-
+#include <filesystem>
 
 // Função para ler um ficheiro e retornar o seu alfabeto
 std::set<char> Alphabet(const std::string& inputFilename) {
@@ -27,7 +27,9 @@ std::string mutateFile(const std::string& inputFilename, double mutationProbabil
     }
 
     // Dar nome ao ficheiro de saida
-    std::string outputFilename = inputFilename + "_mutated";
+    std::filesystem::path filePath(inputFilename);
+    std::string fileNameWithoutExtension = filePath.stem().string();
+    std::string outputFilename = fileNameWithoutExtension + "_mutated.txt";
 
 
     // Abrir o ficheiro de saída para escrita
