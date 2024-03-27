@@ -1,4 +1,9 @@
-# Examples of usage
+# Example of usage for mutate
+```bash
+mutate my_file.txt 0.8
+```
+
+# Examples of usage for CPM
 
 ## No optional values
 ```bash
