@@ -1,5 +1,4 @@
-# TAI labwork #1
-## Group 4
+# TAI Group #4
 ## Developed by:
 - Pompeu Costa, 103294
 - Rafael Pinto, 103379
